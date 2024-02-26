@@ -1,51 +1,59 @@
 import openai
 from aiogram import Bot, Dispatcher, executor, types
 
-
 openai.api_key = 'YOUR_OPENAI_API_KEY'
 bot = Bot(token='YOUR_TELEGRAM_BOT_TOKEN')
 dp = Dispatcher(bot)
 client = openai.OpenAI(api_key=openai.api_key)
 
+user_modes = {}  # user_id: mode
+
 @dp.message_handler(commands=['start'])
 async def send_welcome(message: types.Message):
-    await message.reply("Hello! Send me some text, and I'll try to correct its mistakes. Use /translate to translate text.")
+    await message.reply("Hello! I can correct, translate, or teach. Use /mode to switch modes. Default is correcting.")
+
+@dp.message_handler(commands=['mode'])
+async def change_mode(message: types.Message):
+    try:
+        _, mode = message.text.split()
+        if mode.lower() not in ['correct', 'translate', 'teach']:
+            await message.reply("Invalid mode. Please choose between 'correct', 'translate', or 'teach'.")
+            return
+        user_modes[message.from_user.id] = mode.lower()
+        await message.reply(f"Mode changed to {mode.lower()}.")
+    except ValueError:
+        await message.reply("Usage: /mode [correct/translate/teach]")
 
 @dp.message_handler(commands=['translate'])
 async def translate_text(message: types.Message):
-
-    try:
-        _, src_lang, tgt_lang, *text_parts = message.text.split(maxsplit=3)
-        text_to_translate = " ".join(text_parts) if text_parts else ""
-        if not text_to_translate: 
-            await message.reply("Please provide the text to translate after the command, e.g., `/translate en fr Hello World`.")
-            return
-        
-
-        prompt = f"Translate the following text from {src_lang} to {tgt_lang}: {text_to_translate}"
-        
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo-1106",
-            prompt=prompt,
-            temperature=0.5,
-        )
-        translated_text = response['choices'][0]['text'].strip()
-        await message.reply(translated_text if translated_text else "Sorry, I couldn't translate the text.")
-    except Exception as e:
-        await message.reply(f"An error occurred: {str(e)}")
+   
+    if user_modes.get(message.from_user.id) != 'translate':
+        await message.reply("Switch to translate mode first using /mode translate.")
+        return
+    
 
 @dp.message_handler()
-async def correct_text(message: types.Message):
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo-1106", 
-            prompt=f"Correct the following text: {message.text}",
-            temperature=0.5,
-        )
-        corrected_text = response['choices'][0]['text'].strip()
-        await message.reply(corrected_text if corrected_text else "Sorry, I couldn't correct the text.")
-    except Exception as e:
-        await message.reply(f"An error occurred: {str(e)}")
+async def handle_message(message: types.Message):
+    mode = user_modes.get(message.from_user.id, 'correct')  
+    if mode == 'correct':
+        try:
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo", 
+                prompt=f"Correct the following text: {message.text}",
+                temperature=0.5,
+            )
+            corrected_text = response['choices'][0]['text'].strip()
+            await message.reply(corrected_text if corrected_text else "Sorry, I couldn't correct the text.")
+        except Exception as e:
+            await message.reply(f"An error occurred: {str(e)}")
+    elif mode == 'translate':
+    
+        await message.reply("Please use the /translate command for translations.")
+    elif mode == 'teach':
+ 
+        await message.reply("Teaching mode is not implemented yet.")
+    else:
+        await message.reply("Unknown mode. Use /mode to set a correct mode.")
 
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=True)
